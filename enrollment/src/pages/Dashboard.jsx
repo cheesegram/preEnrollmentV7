@@ -855,7 +855,7 @@ function Dashboard() {
                 </div>
             </Modal>
 
-            <Modal open={importLogOpen} onClose={() => setImportLogOpen(false)} title="Import Notifications">
+            <Modal open={importLogOpen} onClose={() => setImportLogOpen(false)} title="Notifications">
                 <div className="flex flex-col gap-3 max-h-[70vh] min-h-[18rem]">
                     <div className="flex items-center justify-end">
                         <button
