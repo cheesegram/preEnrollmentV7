@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import NavLinkBtn from "../components/NavLinkBtn";
 import logo from "../assets/iitilogo.png";
 import CurriculumTable from "../components/CurriculumTable";
-
+//test
 function Curriculum() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [lastRegularImportAt, setLastRegularImportAt] = useState(() => {
