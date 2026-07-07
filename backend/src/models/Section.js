@@ -7,8 +7,8 @@ const sectionSchema = new mongoose.Schema(
     semester: { type: String, required: true, trim: true },
     regular: { type: Number, default: 0, min: 0 },
     irregular: { type: Number, default: 0, min: 0 },
-    regular_capacity: { type: Number, default: 40, min: 0 },
-    irregular_capacity: { type: Number, default: 10, min: 0 },
+    regular_capacity: { type: Number, default: 45, min: 0 },
+    irregular_capacity: { type: Number, default: 5, min: 0 },
     total_capacity: { type: Number, default: 50, min: 0 },
     status: {
       type: String,

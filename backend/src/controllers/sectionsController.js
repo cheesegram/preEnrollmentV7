@@ -1,22 +1,26 @@
 import Section from "../models/Section.js";
 import Student from "../models/Student.js";
 
-const DEFAULT_REGULAR_CAPACITY = 40;
-const DEFAULT_IRREGULAR_CAPACITY = 10;
+const DEFAULT_REGULAR_CAPACITY = 45;
+const DEFAULT_IRREGULAR_CAPACITY = 5;
 const DEFAULT_TOTAL_CAPACITY = 50;
 
 function toStatus(regular, irregular, totalCapacity) {
-  const total = Number(regular || 0) + Number(irregular || 0);
-  const capacity = Number(totalCapacity || 0);
-  if (total < capacity) return "Available";
-  if (total === capacity) return "Full";
+  const regularCount = Number(regular || 0);
+  const regularCapacity = Number(
+    totalCapacity != null ? totalCapacity : DEFAULT_REGULAR_CAPACITY
+  );
+  if (regularCount < regularCapacity) return "Available";
+  if (regularCount === regularCapacity) return "Full";
   return "Overloaded";
 }
 
 export async function syncSectionsFromStudents(req, res) {
   try {
-    // Use only enrolled students for automatic regular grouping. Irregular students are excluded.
-    const enrolledStudents = await Student.find({ status: "Enrolled" }).lean();
+    // Use regular-track students for automatic grouping. Keep legacy `Regular` records supported.
+    const enrolledStudents = await Student.find({
+      status: { $in: ["Enrolled", "Regular"] },
+    }).lean();
 
     const grouped = new Map();
     for (const student of enrolledStudents) {
@@ -60,7 +64,7 @@ export async function syncSectionsFromStudents(req, res) {
               regular_capacity: regularCapacity,
               irregular_capacity: irregularCapacity,
               total_capacity: totalCapacity,
-              status: toStatus(group.regular, irregular, totalCapacity),
+              status: toStatus(group.regular, irregular, regularCapacity),
             },
           },
           upsert: true,
@@ -84,6 +88,7 @@ export async function syncSectionsFromStudents(req, res) {
             (Number(s.regular_capacity ?? DEFAULT_REGULAR_CAPACITY) +
               Number(s.irregular_capacity ?? DEFAULT_IRREGULAR_CAPACITY))
         );
+        const regularCapacity = Number(s.regular_capacity ?? DEFAULT_REGULAR_CAPACITY);
 
         return {
           updateOne: {
@@ -91,7 +96,7 @@ export async function syncSectionsFromStudents(req, res) {
             update: {
               $set: {
                 regular: 0,
-                status: toStatus(0, irregular, totalCapacity),
+                status: toStatus(0, irregular, regularCapacity),
               },
             },
           },

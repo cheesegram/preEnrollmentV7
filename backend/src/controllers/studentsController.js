@@ -1,11 +1,187 @@
 import Student from "../models/Student.js";
+import Section from "../models/Section.js";
 import mongoose from "mongoose";
 
 const flexibleSchema = new mongoose.Schema({}, { strict: false });
 
+const DEFAULT_REGULAR_CAPACITY = 45;
+const DEFAULT_IRREGULAR_CAPACITY = 5;
+const DEFAULT_TOTAL_CAPACITY = 50;
+
 function getPreAdmissionModel(modelName, collectionName) {
   const preAdmissionDb = mongoose.connection.useDb("pre-admission", { useCache: true });
   return preAdmissionDb.models[modelName] || preAdmissionDb.model(modelName, flexibleSchema, collectionName);
+}
+
+function getPreEnrollmentModel(modelName, collectionName) {
+  const preEnrollmentDb = mongoose.connection.useDb("pre-enrollment", { useCache: true });
+  return preEnrollmentDb.models[modelName] || preEnrollmentDb.model(modelName, flexibleSchema, collectionName);
+}
+
+function normalizeText(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizeSectionName(value) {
+  return normalizeText(value).toUpperCase();
+}
+
+function normalizeSemester(value) {
+  const semester = normalizeText(value);
+  return semester || "N/A";
+}
+
+function normalizeStatus(value) {
+  const status = normalizeText(value);
+  if (!status) {
+    return "Enrolled";
+  }
+
+  const lowered = status.toLowerCase();
+  if (lowered === "regular") {
+    return "Enrolled";
+  }
+
+  if (lowered === "irregular") {
+    return "Irregular";
+  }
+
+  return status;
+}
+
+function toStatus(regular, irregular, totalCapacity) {
+  const total = Number(regular || 0) + Number(irregular || 0);
+  const capacity = Number(totalCapacity || 0);
+  if (total < capacity) return "Available";
+  if (total === capacity) return "Full";
+  return "Overloaded";
+}
+
+function isIrregularStatus(status) {
+  return normalizeText(status).toLowerCase() === "irregular";
+}
+
+function sectionNameToIndex(sectionName) {
+  const normalized = normalizeSectionName(sectionName);
+  if (!/^[A-Z]+$/.test(normalized)) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  let index = 0;
+  for (const character of normalized) {
+    index = index * 26 + (character.charCodeAt(0) - 64);
+  }
+
+  return index;
+}
+
+function indexToSectionName(index) {
+  let current = index;
+  let name = "";
+
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    current = Math.floor((current - 1) / 26);
+  }
+
+  return name;
+}
+
+function getNextSectionName(usedNames) {
+  let index = 1;
+  while (index < 1000) {
+    const candidate = indexToSectionName(index);
+    if (!usedNames.has(candidate)) {
+      return candidate;
+    }
+    index += 1;
+  }
+
+  throw new Error("Unable to allocate a new section name");
+}
+
+function createSectionState({ year, semester, section, sourceSection = null }) {
+  const regularCapacity = Number(
+    sourceSection?.regular_capacity ?? DEFAULT_REGULAR_CAPACITY
+  );
+  const irregularCapacity = Number(
+    sourceSection?.irregular_capacity ?? DEFAULT_IRREGULAR_CAPACITY
+  );
+  const totalCapacity = Number(
+    sourceSection?.total_capacity ?? (regularCapacity + irregularCapacity) ?? DEFAULT_TOTAL_CAPACITY
+  );
+
+  return {
+    year: normalizeText(year),
+    semester: normalizeSemester(semester),
+    section: normalizeSectionName(section),
+    createdAt: new Date().toISOString(),
+    regular: 0,
+    irregular: 0,
+    regular_capacity: regularCapacity,
+    irregular_capacity: irregularCapacity,
+    total_capacity: totalCapacity,
+  };
+}
+
+function sectionHasCapacityForStudent(section, student) {
+  if (isIrregularStatus(student.status)) {
+    return Number(section?.irregular ?? 0) < Number(section?.irregular_capacity ?? DEFAULT_IRREGULAR_CAPACITY);
+  }
+
+  return Number(section?.regular ?? 0) < Number(section?.regular_capacity ?? DEFAULT_REGULAR_CAPACITY);
+}
+
+function sortSectionsByAge(left, right) {
+  const leftCreatedAt = new Date(left?.createdAt ?? 0).getTime();
+  const rightCreatedAt = new Date(right?.createdAt ?? 0).getTime();
+
+  if (leftCreatedAt !== rightCreatedAt) {
+    return leftCreatedAt - rightCreatedAt;
+  }
+
+  const leftIndex = sectionNameToIndex(left?.section);
+  const rightIndex = sectionNameToIndex(right?.section);
+
+  if (leftIndex !== rightIndex) {
+    return leftIndex - rightIndex;
+  }
+
+  return normalizeSectionName(left?.section).localeCompare(normalizeSectionName(right?.section), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function chooseSectionForStudent(sectionGroups, student) {
+  const year = normalizeText(student.year);
+  const semester = normalizeSemester(student.semester);
+  const groupKey = `${year}::${semester}`;
+
+  let groupSections = sectionGroups.get(groupKey);
+  if (!groupSections) {
+    groupSections = [];
+    sectionGroups.set(groupKey, groupSections);
+  }
+
+  const orderedSections = [...groupSections].sort(sortSectionsByAge);
+  const availableSection = orderedSections.find((section) => sectionHasCapacityForStudent(section, student));
+
+  if (availableSection) {
+    return availableSection;
+  }
+
+  const usedNames = new Set(groupSections.map((section) => normalizeSectionName(section.section)).filter(Boolean));
+  const sourceSection = orderedSections[0] ?? null;
+  const nextSection = createSectionState({
+    year,
+    semester,
+    section: getNextSectionName(usedNames),
+    sourceSection,
+  });
+  groupSections.push(nextSection);
+  return nextSection;
 }
 
 export async function getAllStudents(req, res) {
@@ -89,6 +265,44 @@ export async function getPendingApplicants(req, res) {
     res.status(200).json(pendingApplicants);
   } catch (error) {
     console.error("Error in getPendingApplicants controller", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function getToBeAdmittedApplicants(req, res) {
+  try {
+    const ToBeAdmitted = getPreEnrollmentModel("ToBeAdmitted", "to_be_admitted");
+
+    const applicants = await ToBeAdmitted.find(
+      {},
+      {
+        _id: 0,
+        applicantID: 1,
+        applicant_id: 1,
+        applicant_number: 1,
+        first_name: 1,
+        last_name: 1,
+        status: 1,
+      }
+    ).lean();
+
+    const formattedApplicants = applicants.map((applicant) => {
+      const applicantID = String(
+        applicant.applicantID ?? applicant.applicant_id ?? applicant.applicant_number ?? ""
+      ).trim();
+      const firstName = String(applicant.first_name ?? "").trim();
+      const lastName = String(applicant.last_name ?? "").trim();
+
+      return {
+        applicantID,
+        applicant_name: `${firstName} ${lastName}`.trim(),
+        status: String(applicant.status ?? "Pending").trim() || "Pending",
+      };
+    }).filter((applicant) => applicant.applicantID || applicant.applicant_name || applicant.status);
+
+    res.status(200).json(formattedApplicants);
+  } catch (error) {
+    console.error("Error in getToBeAdmittedApplicants controller", error);
     res.status(500).json({ message: "Internal server error" });
   }
 }
@@ -233,10 +447,9 @@ function normalizeImportedStudent(raw = {}) {
     first_name: firstName,
     last_name: lastName,
     name,
-    year: raw.year != null && raw.year !== "" ? Number(raw.year) || String(raw.year) : undefined,
-    section: String(raw.section ?? "").trim(),
-    semester: String(raw.semester ?? "").trim(),
-    status: String(raw.status ?? "Enrolled").trim() || "Enrolled",
+    year: raw.year != null && raw.year !== "" ? String(raw.year).trim() : "",
+    semester: normalizeSemester(raw.semester),
+    status: normalizeStatus(raw.status),
   };
 }
 
@@ -261,6 +474,31 @@ export async function importStudents(req, res) {
 
     console.log(`[Import] Normalized to ${normalized.length} valid students`);
     console.log(`[Import] Student numbers to check:`, normalized.map((s) => s.student_number));
+
+    const existingSections = await Section.find({}).lean();
+    const sectionGroups = new Map();
+    for (const section of existingSections) {
+      const year = normalizeText(section.year);
+      const semester = normalizeSemester(section.semester);
+      const sectionName = normalizeSectionName(section.section);
+      if (!year || !sectionName) {
+        continue;
+      }
+
+      const key = `${year}::${semester}`;
+      const group = sectionGroups.get(key) || [];
+      group.push({
+        year,
+        semester,
+        section: sectionName,
+        regular: Number(section.regular ?? 0),
+        irregular: Number(section.irregular ?? 0),
+        regular_capacity: Number(section.regular_capacity ?? DEFAULT_REGULAR_CAPACITY),
+        irregular_capacity: Number(section.irregular_capacity ?? DEFAULT_IRREGULAR_CAPACITY),
+        total_capacity: Number(section.total_capacity ?? (DEFAULT_REGULAR_CAPACITY + DEFAULT_IRREGULAR_CAPACITY)),
+      });
+      sectionGroups.set(key, group);
+    }
 
     // Get all existing students with these student numbers
     const existingStudents = await Student.find(
@@ -298,11 +536,32 @@ export async function importStudents(req, res) {
       }
     }
 
-    // For "section" import type: skip existing students but import the rest
-    const toImport = normalized.filter((s) => 
-      !existingStudentNumbers.has(String(s.student_number).trim())
-    );
-    const blocked = normalized.filter((s) => 
+    const missingYearStudent = normalized.find((student) => !normalizeText(student.year));
+    if (missingYearStudent) {
+      return res.status(400).json({
+        message: `Student ${missingYearStudent.student_number} is missing a year value`,
+      });
+    }
+
+    const toImport = normalized
+      .filter((s) => !existingStudentNumbers.has(String(s.student_number).trim()))
+      .map((student) => {
+        const chosenSection = chooseSectionForStudent(sectionGroups, student);
+        if (isIrregularStatus(student.status)) {
+          chosenSection.irregular = Number(chosenSection.irregular ?? 0) + 1;
+        } else {
+          chosenSection.regular = Number(chosenSection.regular ?? 0) + 1;
+        }
+
+        chosenSection.status = toStatus(chosenSection.regular, chosenSection.irregular, chosenSection.regular_capacity);
+
+        return {
+          ...student,
+          section: chosenSection.section,
+        };
+      });
+
+    const blocked = normalized.filter((s) =>
       existingStudentNumbers.has(String(s.student_number).trim())
     );
 
@@ -333,6 +592,41 @@ export async function importStudents(req, res) {
     if (operations.length > 0) {
       result = await Student.bulkWrite(operations, { ordered: false });
       console.log(`[Import] Bulk write result - upserted: ${result.upsertedCount}, modified: ${result.modifiedCount}`);
+    }
+
+    if (toImport.length > 0) {
+      const sectionOps = [];
+      for (const sections of sectionGroups.values()) {
+        for (const section of sections) {
+          sectionOps.push({
+            updateOne: {
+              filter: {
+                year: section.year,
+                section: section.section,
+                semester: section.semester,
+              },
+              update: {
+                $set: {
+                  year: section.year,
+                  section: section.section,
+                  semester: section.semester,
+                  regular: section.regular,
+                  irregular: section.irregular,
+                  regular_capacity: section.regular_capacity,
+                  irregular_capacity: section.irregular_capacity,
+                  total_capacity: section.total_capacity,
+                  status: toStatus(section.regular, section.irregular, section.regular_capacity),
+                },
+              },
+              upsert: true,
+            },
+          });
+        }
+      }
+
+      if (sectionOps.length > 0) {
+        await Section.bulkWrite(sectionOps, { ordered: false });
+      }
     }
 
     res.status(200).json({

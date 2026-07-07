@@ -8,10 +8,8 @@ function SectionList() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [selected, setSelected] = useState("All");
     const [sections, setSections] = useState([]);
-    const [irregularMax, setIrregularMax] = useState(0);
     const [loading, setLoading] = useState(true);
     const [query, setQuery] = useState("");
-    const [deleteMode, setDeleteMode] = useState(false);
 
     const displayedSections = useMemo(() => {
         let result = sections;
@@ -33,8 +31,7 @@ function SectionList() {
             } else {
                 result = result.filter(r =>
                     String(r.year).includes(q) ||
-                    r.section.toLowerCase().includes(q) ||
-                    String(r.semester ?? '').toLowerCase().includes(q)
+                    r.section.toLowerCase().includes(q)
                 );
             }
         }
@@ -49,12 +46,18 @@ function SectionList() {
         }
 
         result = [...result].sort((a, b) => {
-            if (a.year !== b.year) return a.year - b.year;
-            if (a.section < b.section) return -1;
-            if (a.section > b.section) return 1;
-            if ((a.semester ?? '') < (b.semester ?? '')) return -1;
-            if ((a.semester ?? '') > (b.semester ?? '')) return 1;
-            return 0;
+            const yearCompare = Number(a.year) - Number(b.year);
+            if (yearCompare !== 0) return yearCompare;
+
+            const semesterOrder = { "1st": 1, "2nd": 2 };
+            const aSemester = semesterOrder[String(a.semester ?? '').trim()] ?? 99;
+            const bSemester = semesterOrder[String(b.semester ?? '').trim()] ?? 99;
+            if (aSemester !== bSemester) return aSemester - bSemester;
+
+            return String(a.section ?? '').localeCompare(String(b.section ?? ''), undefined, {
+                numeric: true,
+                sensitivity: 'base',
+            });
         });
 
         return result;
@@ -64,17 +67,13 @@ function SectionList() {
         try {
             if (withLoading) setLoading(true);
             await api.post("/sections/sync");
-            const [sectionsRes, metaRes] = await Promise.all([
-                api.get("/sections", { params: { t: Date.now() } }),
-                api.get("/sections/meta", { params: { t: Date.now() } }),
-            ]);
+            const sectionsRes = await api.get("/sections", { params: { t: Date.now() } });
             const rawSections = Array.isArray(sectionsRes.data) ? sectionsRes.data : [];
             const normalized = rawSections.map((s) => ({
                 ...s,
                 total: Number(s.regular || 0) + Number(s.irregular || 0),
             }));
             setSections(normalized);
-            setIrregularMax(Number(metaRes?.data?.irregularTotal || 0));
         } catch (e) {
             console.error("Failed to load sections", e);
         } finally {
@@ -85,16 +84,6 @@ function SectionList() {
     useEffect(() => {
         refreshSections({ withLoading: true });
     }, []);
-
-    const handleUpdateSection = async (sectionId, payload) => {
-        await api.patch(`/sections/${sectionId}`, payload);
-        await refreshSections();
-    };
-
-    const handleDeleteSection = async (sectionId) => {
-        await api.delete(`/sections/${sectionId}`);
-        await refreshSections();
-    };
 
     return (
         <div className="flex h-screen w-full bg-gray-50 overflow-hidden font-sans relative">
@@ -212,16 +201,6 @@ function SectionList() {
                                     </label>
                                 ))}
                                 <div className="hidden lg:block h-7 w-px bg-gray-200 mx-1" />
-                                <button
-                                    type="button"
-                                    onClick={() => setDeleteMode((prev) => !prev)}
-                                    className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${deleteMode
-                                        ? "bg-red-600 border-red-600 text-white"
-                                        : "bg-white border-red-200 text-red-600 hover:bg-red-50"
-                                        }`}
-                                >
-                                    Delete Section
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -236,10 +215,6 @@ function SectionList() {
                             <div className="flex-1 overflow-auto">
                                 <SectionTable
                                     sections={displayedSections}
-                                    irregularMax={irregularMax}
-                                    onUpdateSection={handleUpdateSection}
-                                    onDeleteSection={handleDeleteSection}
-                                    deleteMode={deleteMode}
                                 />
                             </div>
                         )}

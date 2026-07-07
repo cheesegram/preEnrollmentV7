@@ -128,7 +128,6 @@ async function parseStudentTemplateFile(file) {
         "first name",
         "last name",
         "year",
-        "section",
         "semester",
         "status",
     ];
@@ -147,7 +146,6 @@ async function parseStudentTemplateFile(file) {
             first_name: String(getCell(row, "first name")).trim(),
             last_name: String(getCell(row, "last name")).trim(),
             year: String(getCell(row, "year")).trim(),
-            section: String(getCell(row, "section")).trim(),
             semester: String(getCell(row, "semester")).trim(),
             status: String(getCell(row, "status")).trim() || "Enrolled",
         }))
@@ -265,7 +263,7 @@ function Dashboard() {
         try {
             const [studentsRes, pendingRes] = await Promise.all([
                 api.get("/students", { params: { t: Date.now() } }),
-                api.get("/students/pending", { params: { t: Date.now() } }),
+                api.get("/students/pre-enrollment/to_be_admitted", { params: { t: Date.now() } }),
             ]);
 
             setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : []);
@@ -297,9 +295,24 @@ function Dashboard() {
         fetchSections();
     }, []);
 
+    const pendingModalApplicants = useMemo(() => {
+        let result = pendingApplicants;
+
+        if (modalQuery) {
+            const q = modalQuery.trim().toLowerCase();
+            result = result.filter((item) => {
+                const applicantID = String(item.applicantID ?? "").toLowerCase();
+                const applicantName = String(item.applicant_name ?? "").toLowerCase();
+                const status = String(item.status ?? "").toLowerCase();
+                return applicantID.includes(q) || applicantName.includes(q) || status.includes(q);
+            });
+        }
+
+        return result;
+    }, [pendingApplicants, modalQuery]);
+
     const modalStudents = useMemo(() => {
-        const isPendingModal = modalTitle === "Pending Students";
-        let result = isPendingModal ? pendingApplicants : students;
+        let result = students;
 
         if (modalTitle === "New Students") {
             result = result.filter(isNewStudent);
@@ -314,11 +327,10 @@ function Dashboard() {
         if (modalQuery) {
             const q = modalQuery.trim().toLowerCase();
             result = result.filter(s => {
-                const num = String((isPendingModal ? s.applicant_number : s.student_number) ?? "").toLowerCase();
                 const first_name = String(s.first_name ?? "").trim().toLowerCase();
                 const last_name = String(s.last_name ?? "").trim().toLowerCase();
-                const pending_name = String(s.applicant_name ?? "").trim().toLowerCase();
-                const name = isPendingModal ? pending_name : `${first_name} ${last_name}`.trim().toLowerCase();
+                const num = String(s.student_number ?? "").toLowerCase();
+                const name = `${first_name} ${last_name}`.trim().toLowerCase();
                 const reverse_name = `${last_name} ${first_name}`.trim().toLowerCase();
 
                 if (/^[a-z]/i.test(q)) return first_name.includes(q) || last_name.includes(q) || name.includes(q) || reverse_name.includes(q);
@@ -467,9 +479,16 @@ function Dashboard() {
                 students: parsedStudents,
                 importType: importType
             });
+
+            try {
+                await api.post("/sections/sync");
+            } catch (syncError) {
+                console.warn("[Frontend] Section sync after import failed", syncError);
+            }
             
             console.log(`[Frontend] Import response:`, response.data);
             await fetchStudents();
+            await fetchSections();
             
             // Show import results
             const imported = response?.data?.imported ?? 0;
@@ -704,15 +723,15 @@ function Dashboard() {
 
                     <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                         <div
-                            onClick={() => openModal("Pending Students")}
+                            onClick={() => openModal("To Be Admitted")}
                             className="cursor-pointer flex flex-col justify-between rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm p-5 min-h-[10rem] hover:shadow-lg hover:-translate-y-1 transition-all duration-200"
                         >
                             <div className="w-fit rounded-full px-3 py-1 bg-yellow-100">
-                                <span className="text-xs sm:text-sm font-semibold text-yellow-700">Pending</span>
+                                <span className="text-xs sm:text-sm font-semibold text-yellow-700">To Be Admitted</span>
                             </div>
                             <div className="mt-4">
                                 <span className="text-3xl font-bold text-gray-800">{pendingCount}</span>
-                                <p className="text-xs sm:text-sm text-gray-500 font-medium mt-1">To Be Registered</p>
+                                <p className="text-xs sm:text-sm text-gray-500 font-medium mt-1">To Be Admitted</p>
                             </div>
                         </div>
 
@@ -830,7 +849,7 @@ function Dashboard() {
                         <input
                             type="text"
                             inputMode="search"
-                            placeholder={modalTitle === "Pending Students" ? "Search by Applicant Name or Number..." : "Search by Student Name or Number..."}
+                            placeholder={modalTitle === "To Be Admitted" ? "Search by Applicant Name or Number..." : "Search by Student Name or Number..."}
                             value={modalQuery}
                             onChange={e => setModalQuery(e.target.value)}
                             className="rounded-xl border border-gray-300 p-3 pl-11 pr-10 w-full focus:ring-2 focus:ring-[#2E522A] focus:border-transparent outline-none transition-shadow"
@@ -850,7 +869,50 @@ function Dashboard() {
                         )}
                     </div>
                     <div className="overflow-y-auto rounded-xl border border-gray-200 flex-1 bg-white">
-                        <StudentsTable students={modalStudents} isPendingView={modalTitle === "Pending Students"} />
+                        {modalTitle === "To Be Admitted" ? (
+                            <div className="rounded-xl bg-white overflow-hidden">
+                                <table className="min-w-full border-collapse text-left text-sm md:text-base whitespace-nowrap">
+                                    <thead className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 text-gray-700">
+                                        <tr>
+                                            <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider text-gray-500">Applicant ID</th>
+                                            <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider text-gray-500">Applicant Name</th>
+                                            <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider text-gray-500 text-center">Status</th>
+                                            <th className="px-6 py-4 font-semibold text-xs uppercase tracking-wider text-gray-500 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {pendingModalApplicants.length > 0 ? (
+                                            pendingModalApplicants.map((applicant, index) => (
+                                                <tr key={`${applicant.applicantID || 'applicant'}-${index}`} className="hover:bg-gray-50/80 transition-colors">
+                                                    <td className="px-6 py-4 font-medium text-gray-900">{applicant.applicantID || '-'}</td>
+                                                    <td className="px-6 py-4 text-gray-800">{applicant.applicant_name || '-'}</td>
+                                                    <td className="px-6 py-4 text-center text-gray-700">{applicant.status || '-'}</td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <button
+                                                            type="button"
+                                                            className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                                                        >
+                                                            Enroll
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        ) : (
+                                            <tr>
+                                                <td colSpan="4" className="px-6 py-12 text-center text-gray-500">
+                                                    <div className="flex flex-col items-center justify-center gap-2">
+                                                        <i className="fa-regular fa-folder-open text-3xl opacity-50"></i>
+                                                        <p>No applicants found.</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <StudentsTable students={modalStudents} isPendingView={false} />
+                        )}
                     </div>
                 </div>
             </Modal>

@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "seed": "node src/scripts/seedStudents.js"
+    "seed": "node src/scripts/seedStudents.js",
+    "reset-section-capacities": "node src/scripts/resetSectionCapacities.js",
+    "rebalance-section-allocations": "node src/scripts/rebalanceSectionAllocations.js",
+    "remove-empty-sections": "node src/scripts/removeEmptySections.js"
   },
   "type": "module",
   "keywords": [],

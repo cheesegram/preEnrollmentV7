@@ -4,6 +4,7 @@ import {
   deleteStudent,
   getAllStudents,
   getPendingApplicants,
+  getToBeAdmittedApplicants,
   getStudentById,
   getStudentSections,
   getStudentBySection,
@@ -15,6 +16,7 @@ const router = express.Router();
 
 router.get("/", getAllStudents);
 router.get("/pending", getPendingApplicants);
+router.get("/pre-enrollment/to_be_admitted", getToBeAdmittedApplicants);
 router.get("/sections", getStudentSections);
 router.get("/section/:section", getStudentBySection);
 router.post("/import", importStudents);
