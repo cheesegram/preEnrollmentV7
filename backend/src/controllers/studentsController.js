@@ -426,6 +426,125 @@ export async function updateStudent(req, res) {
   }
 }
 
+export async function enrollFromToBeAdmitted(req, res) {
+  try {
+    const { applicantID, first_name, last_name } = req.body;
+
+    if (!applicantID) {
+      return res.status(400).json({ message: "applicantID is required" });
+    }
+
+    // Get the current year for student number prefix
+    const currentYear = new Date().getFullYear();
+
+    // Find the max student number with the current year prefix to generate the next one
+    const maxStudent = await Student.findOne(
+      { student_number: { $regex: `^${currentYear}` } },
+      { student_number: 1 }
+    )
+      .sort({ student_number: -1 })
+      .lean();
+
+    let nextSequence = 1;
+    if (maxStudent && maxStudent.student_number) {
+      const lastSeq = parseInt(String(maxStudent.student_number).slice(4), 10);
+      if (!isNaN(lastSeq)) {
+        nextSequence = lastSeq + 1;
+      }
+    }
+
+    const studentNumber = `${currentYear}${String(nextSequence).padStart(5, "0")}`;
+
+    // Remove from to_be_admitted in pre-enrollment DB
+    const ToBeAdmitted = getPreEnrollmentModel("ToBeAdmitted", "to_be_admitted");
+    const deleted = await ToBeAdmitted.findOneAndDelete({
+      $or: [
+        { applicantID },
+        { applicant_id: applicantID },
+        { applicant_number: applicantID },
+      ],
+    }).lean();
+
+    if (!deleted) {
+      return res.status(404).json({ message: "Applicant not found in to_be_admitted" });
+    }
+
+    // Build the student object with year=1, semester=1st
+    const firstName = String(first_name ?? deleted.first_name ?? "").trim();
+    const lastName = String(last_name ?? deleted.last_name ?? "").trim();
+
+    const student = {
+      student_number: studentNumber,
+      first_name: firstName,
+      last_name: lastName,
+      name: `${firstName} ${lastName}`.trim(),
+      year: "1",
+      semester: "1st",
+      status: "Enrolled",
+    };
+
+    // Use the same section assignment logic as importStudents
+    const existingSections = await Section.find({}).lean();
+    const sectionGroups = new Map();
+    for (const section of existingSections) {
+      const year = normalizeText(section.year);
+      const sem = normalizeSemester(section.semester);
+      const sectionName = normalizeSectionName(section.section);
+      if (!year || !sectionName) continue;
+
+      const key = `${year}::${sem}`;
+      const group = sectionGroups.get(key) || [];
+      group.push({
+        year,
+        semester: sem,
+        section: sectionName,
+        regular: Number(section.regular ?? 0),
+        irregular: Number(section.irregular ?? 0),
+        regular_capacity: Number(section.regular_capacity ?? DEFAULT_REGULAR_CAPACITY),
+        irregular_capacity: Number(section.irregular_capacity ?? DEFAULT_IRREGULAR_CAPACITY),
+        total_capacity: Number(section.total_capacity ?? (DEFAULT_REGULAR_CAPACITY + DEFAULT_IRREGULAR_CAPACITY)),
+      });
+      sectionGroups.set(key, group);
+    }
+
+    const chosenSection = chooseSectionForStudent(sectionGroups, student);
+    chosenSection.regular = Number(chosenSection.regular ?? 0) + 1;
+    chosenSection.status = toStatus(chosenSection.regular, chosenSection.irregular, chosenSection.regular_capacity);
+    student.section = chosenSection.section;
+
+    // Insert the student
+    await Student.create(student);
+
+    // Update the section counts
+    await Section.updateOne(
+      {
+        year: chosenSection.year,
+        section: chosenSection.section,
+        semester: chosenSection.semester,
+      },
+      {
+        $set: {
+          regular: chosenSection.regular,
+          irregular: chosenSection.irregular,
+          regular_capacity: chosenSection.regular_capacity,
+          irregular_capacity: chosenSection.irregular_capacity,
+          total_capacity: chosenSection.total_capacity,
+          status: chosenSection.status,
+        },
+      },
+      { upsert: true }
+    );
+
+    res.status(200).json({
+      message: "Student enrolled successfully",
+      student,
+    });
+  } catch (error) {
+    console.error("Error in enrollFromToBeAdmitted controller", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
 export async function deleteStudent(req, res) {
   try {
     const deletedStudent = await Student.findByIdAndDelete(req.params.id);

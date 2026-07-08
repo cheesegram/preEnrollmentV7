@@ -208,7 +208,7 @@ function SectionTable({ sections = [] }) {
                                                 className={`${getCapacityStateStyle(sec.regular, sec.regular_capacity)} underline underline-offset-2 hover:opacity-80`}
                                                 aria-label={`View enrolled students for section ${sec.section}`}
                                             >
-                                                {`${sec.regular}/${sec.regular_capacity}`}
+                                                {`${sec.regular ?? 0}/${sec.regular_capacity ?? 45}`}
                                             </button>
                                         </td>
                                         <td className="px-6 py-4 text-center">
@@ -218,7 +218,7 @@ function SectionTable({ sections = [] }) {
                                                 className={`${getCapacityStateStyle(sec.irregular, sec.irregular_capacity)} underline underline-offset-2 hover:opacity-80`}
                                                 aria-label={`View irregular students for section ${sec.section}`}
                                             >
-                                                {`${sec.irregular}/${sec.irregular_capacity}`}
+                                                {`${sec.irregular ?? 0}/${sec.irregular_capacity ?? 5}`}
                                             </button>
                                         </td>
                                         <td className="px-6 py-4 text-gray-900 font-semibold text-center">{sec.total}</td>

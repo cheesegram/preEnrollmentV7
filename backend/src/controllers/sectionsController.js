@@ -25,7 +25,7 @@ export async function syncSectionsFromStudents(req, res) {
     const grouped = new Map();
     for (const student of enrolledStudents) {
       const year = String(student.year ?? "").trim();
-      const section = String(student.section ?? "").trim();
+      const section = String(student.section ?? "").trim().toUpperCase();
       const semester = String(student.semester ?? "").trim() || "N/A";
       if (!year || !section) continue;
 

@@ -7,7 +7,7 @@ import api from "../lib/axios";
 import toast from "react-hot-toast";
 import * as XLSX from "xlsx";
 
-//wowzers
+//yeppers
 
 const STUDENT_HEADERS = [
     "STUDENT NUMBER",
@@ -169,6 +169,7 @@ function Dashboard() {
     const [modalQuery, setModalQuery] = useState("");
     const [isRateLimited, setIsRateLimited] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
+    const [isEnrolling, setIsEnrolling] = useState(false);
     const [exportTypeOpen, setExportTypeOpen] = useState(false);
     const [studentExportOpen, setStudentExportOpen] = useState(false);
     const [sectionExportOpen, setSectionExportOpen] = useState(false);
@@ -176,11 +177,6 @@ function Dashboard() {
     const [exportTarget, setExportTarget] = useState(null);
     const [studentExportQuery, setStudentExportQuery] = useState("");
     const [sectionExportQuery, setSectionExportQuery] = useState("");
-    const [createSectionOpen, setCreateSectionOpen] = useState(false);
-    const [sectionNameInput, setSectionNameInput] = useState("");
-    const [sectionYearInput, setSectionYearInput] = useState("1");
-    const [sectionSemesterInput, setSectionSemesterInput] = useState("1st");
-    const [isCreatingSection, setIsCreatingSection] = useState(false);
     const [importLogOpen, setImportLogOpen] = useState(false);
     const [importNotifications, setImportNotifications] = useState(() => {
         try {
@@ -408,56 +404,23 @@ function Dashboard() {
         importInputRef.current?.click();
     };
 
-    const handleOpenCreateSection = () => {
-        setSectionNameInput("");
-        setSectionYearInput("1");
-        setSectionSemesterInput("1st");
-        setCreateSectionOpen(true);
-    };
-
-    const handleCreateSection = async () => {
-        const section = String(sectionNameInput ?? "").trim().toUpperCase();
-        const year = String(sectionYearInput ?? "").trim();
-        const semester = String(sectionSemesterInput ?? "").trim();
-
-        if (!section) {
-            toast.error("Section Name is required");
-            return;
-        }
-
-        if (!["1", "2", "3", "4"].includes(year)) {
-            toast.error("Year must be 1, 2, 3, or 4");
-            return;
-        }
-
-        if (!["1st", "2nd"].includes(semester)) {
-            toast.error("Semester must be 1st or 2nd");
-            return;
-        }
-
-        const sectionTemplateJson = {
-            section,
-            year,
-            regular: 0,
-            irregular: 0,
-            regular_capacity: 40,
-            irregular_capacity: 10,
-            total_capacity: 50,
-            semester,
-            status: "Available",
-        };
-
+    const handleEnrollApplicant = async (applicant) => {
+        if (isEnrolling) return;
         try {
-            setIsCreatingSection(true);
-            await api.post("/sections", sectionTemplateJson);
+            setIsEnrolling(true);
+            await api.post("/students/enroll-from-to-be-admitted", {
+                applicantID: applicant.applicantID,
+            });
+            toast.success(`Enrolled ${applicant.applicant_name} successfully`);
+            await fetchStudents();
             await fetchSections();
-            setCreateSectionOpen(false);
-            toast.success("Section created successfully");
+            const pendingRes = await api.get("/students/pre-enrollment/to_be_admitted", { params: { t: Date.now() } });
+            setPendingApplicants(Array.isArray(pendingRes.data) ? pendingRes.data : []);
         } catch (error) {
-            console.error("Create section failed", error);
-            toast.error(error?.response?.data?.message || "Failed to create section");
+            console.error("Enroll failed", error);
+            toast.error(error?.response?.data?.message || "Failed to enroll applicant");
         } finally {
-            setIsCreatingSection(false);
+            setIsEnrolling(false);
         }
     };
 
@@ -721,20 +684,7 @@ function Dashboard() {
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                        <div
-                            onClick={() => openModal("To Be Admitted")}
-                            className="cursor-pointer flex flex-col justify-between rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm p-5 min-h-[10rem] hover:shadow-lg hover:-translate-y-1 transition-all duration-200"
-                        >
-                            <div className="w-fit rounded-full px-3 py-1 bg-yellow-100">
-                                <span className="text-xs sm:text-sm font-semibold text-yellow-700">To Be Admitted</span>
-                            </div>
-                            <div className="mt-4">
-                                <span className="text-3xl font-bold text-gray-800">{pendingCount}</span>
-                                <p className="text-xs sm:text-sm text-gray-500 font-medium mt-1">To Be Admitted</p>
-                            </div>
-                        </div>
-
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         <div
                             onClick={() => openModal("New Students")}
                             className="cursor-pointer flex flex-col justify-between rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm p-5 min-h-[10rem] hover:shadow-lg hover:-translate-y-1 transition-all duration-200"
@@ -795,11 +745,11 @@ function Dashboard() {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <button
                             type="button"
-                            onClick={handleOpenCreateSection}
+                            onClick={() => openModal("To Be Admitted")}
                             className="flex flex-col cursor-pointer border border-gray-200 rounded-2xl bg-white/90 backdrop-blur-sm justify-center items-center py-8 px-4 gap-3 hover:shadow-md hover:border-gray-300 transition-all text-gray-600 hover:text-[#2E522A]"
                         >
-                            <i className="fa-solid fa-plus text-2xl"></i>
-                            <span className="text-sm font-medium">Create new section</span>
+                            <i className="fa-solid fa-user-plus text-2xl"></i>
+                            <span className="text-sm font-medium">To Be Admitted ({pendingCount})</span>
                         </button>
                         <button
                             type="button"
@@ -890,9 +840,11 @@ function Dashboard() {
                                                     <td className="px-6 py-4 text-right">
                                                         <button
                                                             type="button"
-                                                            className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                                                            onClick={() => handleEnrollApplicant(applicant)}
+                                                            disabled={isEnrolling}
+                                                            className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                                         >
-                                                            Enroll
+                                                            {isEnrolling ? "Enrolling..." : "Enroll"}
                                                         </button>
                                                     </td>
                                                 </tr>
@@ -1106,68 +1058,6 @@ function Dashboard() {
                     >
                         CSV
                     </button>
-                </div>
-            </Modal>
-
-            <Modal open={createSectionOpen} onClose={() => !isCreatingSection && setCreateSectionOpen(false)} title="Create New Section">
-                <div className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-1">
-                        <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Section Name</label>
-                        <input
-                            type="text"
-                            value={sectionNameInput}
-                            onChange={(e) => setSectionNameInput(String(e.target.value ?? "").toUpperCase())}
-                            placeholder="e.g. A"
-                            className="h-11 rounded-xl border border-gray-300 px-4 text-gray-900 focus:ring-2 focus:ring-[#2E522A] focus:border-transparent outline-none"
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="flex flex-col gap-1">
-                            <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Year</label>
-                            <select
-                                value={sectionYearInput}
-                                onChange={(e) => setSectionYearInput(e.target.value)}
-                                className="h-11 rounded-xl border border-gray-300 px-4 text-gray-900 focus:ring-2 focus:ring-[#2E522A] focus:border-transparent outline-none"
-                            >
-                                {["1", "2", "3", "4"].map((year) => (
-                                    <option key={year} value={year}>{year}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className="flex flex-col gap-1">
-                            <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Semester</label>
-                            <select
-                                value={sectionSemesterInput}
-                                onChange={(e) => setSectionSemesterInput(e.target.value)}
-                                className="h-11 rounded-xl border border-gray-300 px-4 text-gray-900 focus:ring-2 focus:ring-[#2E522A] focus:border-transparent outline-none"
-                            >
-                                {["1st", "2nd"].map((semester) => (
-                                    <option key={semester} value={semester}>{semester}</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button
-                            type="button"
-                            onClick={() => setCreateSectionOpen(false)}
-                            disabled={isCreatingSection}
-                            className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-medium"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleCreateSection}
-                            disabled={isCreatingSection}
-                            className="px-4 py-2 rounded-lg bg-[#2E522A] text-white font-medium"
-                        >
-                            {isCreatingSection ? "Saving..." : "OK"}
-                        </button>
-                    </div>
                 </div>
             </Modal>
 

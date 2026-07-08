@@ -69,10 +69,30 @@ function SectionList() {
             await api.post("/sections/sync");
             const sectionsRes = await api.get("/sections", { params: { t: Date.now() } });
             const rawSections = Array.isArray(sectionsRes.data) ? sectionsRes.data : [];
-            const normalized = rawSections.map((s) => ({
-                ...s,
-                total: Number(s.regular || 0) + Number(s.irregular || 0),
-            }));
+
+            // Deduplicate sections by (year, section, semester) — keep the one with the highest regular count
+            const seen = new Map();
+            for (const s of rawSections) {
+                const key = `${String(s.year ?? '')}::${String(s.section ?? '')}::${String(s.semester ?? '')}`;
+                const existing = seen.get(key);
+                const sRegular = Number(s.regular ?? 0);
+                if (!existing || sRegular > Number(existing.regular ?? 0)) {
+                    seen.set(key, s);
+                }
+            }
+            const deduplicated = Array.from(seen.values());
+
+            const normalized = deduplicated
+                .map((s) => ({
+                    ...s,
+                    regular: Number(s.regular ?? 0),
+                    irregular: Number(s.irregular ?? 0),
+                    regular_capacity: Number(s.regular_capacity ?? 45),
+                    irregular_capacity: Number(s.irregular_capacity ?? 5),
+                    total_capacity: Number(s.total_capacity ?? 50),
+                    total: Number(s.regular ?? 0) + Number(s.irregular ?? 0),
+                }))
+                .filter((s) => s.regular > 0 || s.irregular > 0);
             setSections(normalized);
         } catch (e) {
             console.error("Failed to load sections", e);
