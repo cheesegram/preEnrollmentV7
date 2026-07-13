@@ -235,7 +235,7 @@ function StudentsTable({ students, className = "", isPendingView = false }) {
             </div>
 
             <div className="p-5 md:p-6 bg-gray-50/50 min-h-[300px]">
-              {curriculumLoading ? (
+              {subjectLoading ? (
                 <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-gray-500 gap-3">
                   <i className="fa-solid fa-circle-notch fa-spin text-3xl text-[#2E522A]"></i>
                   <p className="text-sm font-medium">Loading {selectedSubjectView === 'schedule' ? 'schedule' : 'curriculum'}...</p>
