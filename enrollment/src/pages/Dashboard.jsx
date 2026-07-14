@@ -7,7 +7,7 @@ import api from "../lib/axios";
 import toast from "react-hot-toast";
 import * as XLSX from "xlsx";
 
-//wowowie
+//yallow
 
 const STUDENT_HEADERS = [
     "STUDENT NUMBER",
@@ -259,7 +259,7 @@ function Dashboard() {
         try {
             const [studentsRes, pendingRes] = await Promise.all([
                 api.get("/students", { params: { t: Date.now() } }),
-                api.get("/students/pre-enrollment/to_be_admitted", { params: { t: Date.now() } }),
+                api.get("/students/pre-admission/admitted-applicants", { params: { t: Date.now() } }),
             ]);
 
             setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : []);
@@ -414,7 +414,7 @@ function Dashboard() {
             toast.success(`Enrolled ${applicant.applicant_name} successfully`);
             await fetchStudents();
             await fetchSections();
-            const pendingRes = await api.get("/students/pre-enrollment/to_be_admitted", { params: { t: Date.now() } });
+            const pendingRes = await api.get("/students/pre-admission/admitted-applicants", { params: { t: Date.now() } });
             setPendingApplicants(Array.isArray(pendingRes.data) ? pendingRes.data : []);
         } catch (error) {
             console.error("Enroll failed", error);

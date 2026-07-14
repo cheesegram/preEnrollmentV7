@@ -307,6 +307,64 @@ export async function getToBeAdmittedApplicants(req, res) {
   }
 }
 
+export async function getAdmittedApplicants(req, res) {
+  try {
+    const AdmittedApplicants = getPreAdmissionModel("AdmittedApplicant", "admitted-applicants");
+
+    const applicants = await AdmittedApplicants.find({}).lean();
+
+    const formattedApplicants = applicants.map((applicant) => {
+      // Try multiple possible field name variations
+      const applicantID = String(
+        applicant.applicantID ??
+        applicant.applicant_id ??
+        applicant.applicant_number ??
+        applicant.applicantId ??
+        applicant.id ??
+        applicant._id ??
+        ""
+      ).trim();
+
+      const firstName = String(
+        applicant.first_name ??
+        applicant.firstName ??
+        applicant.firstname ??
+        applicant.given_name ??
+        applicant.givenName ??
+        ""
+      ).trim();
+
+      const lastName = String(
+        applicant.last_name ??
+        applicant.lastName ??
+        applicant.lastname ??
+        applicant.family_name ??
+        applicant.familyName ??
+        applicant.surname ??
+        ""
+      ).trim();
+
+      const status = String(
+        applicant.status ??
+        applicant.enrollment_status ??
+        applicant.enrollmentStatus ??
+        "Pending"
+      ).trim() || "Pending";
+
+      return {
+        applicantID,
+        applicant_name: `${firstName} ${lastName}`.trim(),
+        status,
+      };
+    }).filter((applicant) => applicant.applicantID || applicant.applicant_name || applicant.status);
+
+    res.status(200).json(formattedApplicants);
+  } catch (error) {
+    console.error("Error in getAdmittedApplicants controller", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
 export async function getStudentSections(req, res) {
   try {
     const sections = await Student.distinct("section", {
