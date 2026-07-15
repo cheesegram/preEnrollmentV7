@@ -7,7 +7,7 @@ import api from "../lib/axios";
 import toast from "react-hot-toast";
 import * as XLSX from "xlsx";
 
-//yallow
+//lebowski
 
 const STUDENT_HEADERS = [
     "STUDENT NUMBER",
@@ -234,10 +234,11 @@ function Dashboard() {
     const isNewStudent = (student) => String(student.year) === "1" && String(student.semester) === "1st" && student.status !== "Pending";
 
     const newStudentsCount = students.filter(isNewStudent).length;
+    const blockCount = students.filter(s => s.status === "Block").length;
     const enrolledCount = students.filter(s => s.status === "Enrolled").length;
+    const totalCount = students.filter(s => s.status !== "Pending").length;
     const pendingCount = pendingApplicants.length;
     const irregularCount = students.filter(s => s.status === "Irregular").length;
-    const totalCount = students.filter(s => s.status !== "Pending").length;
 
     useMemo(() => {
         document.title = "Dashboard - IITI Enrollment System";
@@ -312,6 +313,8 @@ function Dashboard() {
 
         if (modalTitle === "New Students") {
             result = result.filter(isNewStudent);
+        } else if (modalTitle === "Block Students") {
+            result = result.filter(s => s.status === "Block");
         } else if (modalTitle === "Enrolled Students") {
             result = result.filter(s => s.status === "Enrolled");
         } else if (modalTitle === "Irregular Students") {
@@ -699,15 +702,15 @@ function Dashboard() {
                         </div>
 
                         <div
-                            onClick={() => openModal("Enrolled Students")}
+                            onClick={() => openModal("Block Students")}
                             className="cursor-pointer flex flex-col justify-between rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-sm p-5 min-h-[10rem] hover:shadow-lg hover:-translate-y-1 transition-all duration-200"
                         >
                             <div className="w-fit rounded-full px-3 py-1 bg-blue-100">
-                                <span className="text-xs sm:text-sm font-semibold text-blue-700">Enrolled</span>
+                                <span className="text-xs sm:text-sm font-semibold text-blue-700">Block</span>
                             </div>
                             <div className="mt-4">
-                                <span className="text-3xl font-bold text-gray-800">{enrolledCount}</span>
-                                <p className="text-xs sm:text-sm text-gray-500 font-medium mt-1">Enrolled Students</p>
+                                <span className="text-3xl font-bold text-gray-800">{blockCount}</span>
+                                <p className="text-xs sm:text-sm text-gray-500 font-medium mt-1">Block Students</p>
                             </div>
                         </div>
 
@@ -729,11 +732,11 @@ function Dashboard() {
                             className="cursor-pointer flex flex-col justify-between rounded-2xl border border-green-800 bg-[#2E522A] p-5 min-h-[10rem] hover:shadow-lg hover:-translate-y-1 transition-all duration-200 h-full"
                         >
                             <div className="w-fit rounded-full px-3 py-1 bg-green-100/20">
-                                <span className="text-xs sm:text-sm font-semibold text-green-100">Total Students</span>
+                                <span className="text-xs sm:text-sm font-semibold text-green-100">Enrolled</span>
                             </div>
                             <div className="mt-4">
                                 <span className="text-3xl font-bold text-white">{totalCount}</span>
-                                <p className="text-xs sm:text-sm text-green-100 font-medium mt-1">Overall Total</p>
+                                <p className="text-xs sm:text-sm text-green-100 font-medium mt-1">Enrolled Students</p>
                             </div>
                         </div>
                     </div>

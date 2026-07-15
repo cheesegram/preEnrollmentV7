@@ -121,6 +121,10 @@ function StudentsTable({ students, className = "", isPendingView = false }) {
   const getStatusStyle = (status) => {
     const normalizedStatus = status?.toLowerCase() || '';
 
+    // Block matches the blue style
+    if (normalizedStatus === 'block') {
+      return 'bg-blue-100 text-blue-700 font-bold';
+    }
     // Enrolled matches the blue style
     if (normalizedStatus.includes('enrolled')) {
       return 'bg-blue-100 text-blue-700 font-bold';

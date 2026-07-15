@@ -513,23 +513,65 @@ export async function enrollFromToBeAdmitted(req, res) {
 
     const studentNumber = `${currentYear}${String(nextSequence).padStart(5, "0")}`;
 
-    // Remove from to_be_admitted in pre-enrollment DB
-    const ToBeAdmitted = getPreEnrollmentModel("ToBeAdmitted", "to_be_admitted");
-    const deleted = await ToBeAdmitted.findOneAndDelete({
-      $or: [
-        { applicantID },
-        { applicant_id: applicantID },
-        { applicant_number: applicantID },
-      ],
-    }).lean();
+    // Try to find and remove from admitted-applicants in pre-admission DB first
+    const AdmittedApplicants = getPreAdmissionModel("AdmittedApplicant", "admitted-applicants");
 
-    if (!deleted) {
-      return res.status(404).json({ message: "Applicant not found in to_be_admitted" });
+    // Build a flexible search query trying multiple field name/number formats
+    const searchConditions = [
+      { applicantID },
+      { applicant_id: applicantID },
+      { applicant_number: applicantID },
+      { applicant_number: Number(applicantID) },
+      { applicantId: applicantID },
+      { applicantId: Number(applicantID) },
+    ];
+
+    // Try to match by _id as both string and ObjectId
+    if (mongoose.Types.ObjectId.isValid(applicantID)) {
+      searchConditions.push({ _id: new mongoose.Types.ObjectId(applicantID) });
     }
 
-    // Build the student object with year=1, semester=1st
-    const firstName = String(first_name ?? deleted.first_name ?? "").trim();
-    const lastName = String(last_name ?? deleted.last_name ?? "").trim();
+    let deleted = await AdmittedApplicants.findOneAndDelete({
+      $or: searchConditions,
+    }).lean();
+
+    let firstName, lastName;
+
+    if (deleted) {
+      firstName = String(first_name ??
+        deleted.first_name ??
+        deleted.firstName ??
+        deleted.firstname ??
+        deleted.given_name ??
+        deleted.givenName ??
+        "").trim();
+      lastName = String(last_name ??
+        deleted.last_name ??
+        deleted.lastName ??
+        deleted.lastname ??
+        deleted.family_name ??
+        deleted.familyName ??
+        deleted.surname ??
+        "").trim();
+    } else {
+      // Fall back to to_be_admitted in pre-enrollment DB
+      const ToBeAdmitted = getPreEnrollmentModel("ToBeAdmitted", "to_be_admitted");
+      deleted = await ToBeAdmitted.findOneAndDelete({
+        $or: [
+          { applicantID },
+          { applicant_id: applicantID },
+          { applicant_number: applicantID },
+          { applicant_number: Number(applicantID) },
+        ],
+      }).lean();
+
+      if (!deleted) {
+        return res.status(404).json({ message: "Applicant not found in database" });
+      }
+
+      firstName = String(first_name ?? deleted.first_name ?? "").trim();
+      lastName = String(last_name ?? deleted.last_name ?? "").trim();
+    }
 
     const student = {
       student_number: studentNumber,
